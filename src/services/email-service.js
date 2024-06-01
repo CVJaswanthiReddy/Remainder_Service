@@ -1,6 +1,7 @@
 const sender = require('../config/email-config');
 const TicketRepository = require('../repository/ticket-repository');
-
+const amqp= require('amqplib')
+const {MESSAGE_BROKER_URL}=require('../config/server-config');
 const repo = new TicketRepository();
 
 const sendBasicEmail = async (mailFrom, mailTo, mailSubject, mailBody) => {
@@ -54,7 +55,7 @@ const subscribeEvents = async (payload) => {
             await createNotification(data);
             break;
         case 'SEND_BASIC_MAIL':
-            await sendBasicEmail(data);
+            await sendBasicEmail(data.mailFrom, data.mailTo, data.mailSubject, data.mailBody);
             break;
         default: 
             console.log('No valid event received');
@@ -62,12 +63,32 @@ const subscribeEvents = async (payload) => {
     }
 }
 
+// RabbitMQ consumer setup
+const startConsumer = async () => {
+    const connection = await amqp.connect(MESSAGE_BROKER_URL);
+    const channel = await connection.createChannel();
+    channel.assertQueue('emailQueue', { durable: true });
+
+    channel.consume('emailQueue', async (msg) => {
+        if (msg !== null) {
+            const emailData = JSON.parse(msg.content.toString());
+            await sendBasicEmail(emailData.mailFrom, emailData.mailTo, emailData.mailSubject, emailData.mailBody);
+            channel.ack(msg);
+        }
+    });
+};
+
+
+
+
 module.exports = {
     sendBasicEmail,
     fetchPendingEmails,
     createNotification,
     updateTicket,
-    subscribeEvents
+    subscribeEvents,
+    startConsumer
+    
 }
 
 
